@@ -40,6 +40,27 @@ Rules:
 - Do not invent exact prices, booking availability or fake confirmations
 """
 
+MAIN_KEYBOARD = {
+    "keyboard": [
+        [
+            {
+                "text": "📍 Отправить геолокацию",
+                "request_location": True
+            }
+        ],
+        [
+            {"text": "🌐 eSIM"},
+            {"text": "🚕 Вызвать такси"}
+        ],
+        [
+            {"text": "🏨 Забронировать отель"}
+        ]
+    ],
+    "resize_keyboard": True,
+    "one_time_keyboard": False
+}
+
+
 def send_telegram_message(chat_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
@@ -52,6 +73,7 @@ def send_telegram_message(chat_id, text, reply_markup=None):
         payload["reply_markup"] = reply_markup
 
     requests.post(url, json=payload)
+
 
 def ask_gpt(messages):
     response = client.chat.completions.create(
@@ -66,9 +88,11 @@ def ask_gpt(messages):
 
     return response.choices[0].message.content
 
+
 @app.route("/")
 def home():
     return "Binkath Bot is running"
+
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -104,7 +128,8 @@ def webhook():
             f"- банкомат\n"
             f"- аптека\n"
             f"- достопримечательность\n"
-            f"- такси"
+            f"- такси",
+            reply_markup=MAIN_KEYBOARD
         )
 
         return "ok"
@@ -113,19 +138,6 @@ def webhook():
 
     if user_text == "/start":
         chat_history[chat_id] = []
-
-        location_keyboard = {
-            "keyboard": [
-                [
-                    {
-                        "text": "📍 Отправить геолокацию",
-                        "request_location": True
-                    }
-                ]
-            ],
-            "resize_keyboard": True,
-            "one_time_keyboard": False
-        }
 
         welcome_text = (
             "🇺🇿 Добро пожаловать в Binkath Concierge!\n\n"
@@ -144,7 +156,17 @@ def webhook():
         send_telegram_message(
             chat_id,
             welcome_text,
-            reply_markup=location_keyboard
+            reply_markup=MAIN_KEYBOARD
+        )
+
+        return "ok"
+
+    if user_text in ["🌐 eSIM", "🚕 Вызвать такси", "🏨 Забронировать отель"]:
+        send_telegram_message(
+            chat_id,
+            "🚧 Эта функция сейчас на стадии разработки.\n\n"
+            "Скоро здесь появится полноценный сервис Binkath Concierge.",
+            reply_markup=MAIN_KEYBOARD
         )
 
         return "ok"
@@ -152,7 +174,8 @@ def webhook():
     if not user_text:
         send_telegram_message(
             chat_id,
-            "Пожалуйста, отправьте текстовое сообщение."
+            "Пожалуйста, отправьте текстовое сообщение.",
+            reply_markup=MAIN_KEYBOARD
         )
         return "ok"
 
@@ -190,7 +213,8 @@ def webhook():
             send_telegram_message(
                 chat_id,
                 f"🔎 Нашёл поиск рядом с вашей геолокацией:\n\n"
-                f"{maps_search}"
+                f"{maps_search}",
+                reply_markup=MAIN_KEYBOARD
             )
 
             return "ok"
@@ -198,7 +222,8 @@ def webhook():
         else:
             send_telegram_message(
                 chat_id,
-                "📍 Сначала нажмите кнопку «Отправить геолокацию»."
+                "📍 Сначала нажмите кнопку «Отправить геолокацию».",
+                reply_markup=MAIN_KEYBOARD
             )
 
             return "ok"
@@ -223,17 +248,23 @@ def webhook():
 
         chat_history[chat_id] = chat_history[chat_id][-10:]
 
-        send_telegram_message(chat_id, reply)
+        send_telegram_message(
+            chat_id,
+            reply,
+            reply_markup=MAIN_KEYBOARD
+        )
 
     except Exception as e:
         print("ERROR:", e)
 
         send_telegram_message(
             chat_id,
-            "Ошибка сервиса. Попробуйте позже."
+            "Ошибка сервиса. Попробуйте позже.",
+            reply_markup=MAIN_KEYBOARD
         )
 
     return "ok"
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
