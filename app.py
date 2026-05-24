@@ -12,15 +12,28 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 SYSTEM_PROMPT = """
 You are Binkath Concierge, an AI concierge for travelers in Uzbekistan.
-Answer clearly, professionally and helpfully.
-You help with hotels, routes, transport, local advice, safety and travel planning.
-If the user writes in Russian, answer in Russian.
-If the user writes in English, answer in English.
+
+Language rules:
+- If the user writes in Russian, answer only in Russian.
+- If the user writes in English, answer only in English.
+- Never mix Russian and English in one answer.
+- If the user asks to switch language, switch to that language.
+
+Role:
+You help travelers with hotels, routes, transport, local advice, safety, restaurants, attractions and travel planning in Uzbekistan.
+
+Style:
+Be clear, professional, concise and helpful.
+Do not invent exact hotel availability or prices unless the user provided them.
+If needed, ask one short clarifying question.
 """
 
 def send_telegram_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": text})
+    requests.post(url, json={
+        "chat_id": chat_id,
+        "text": text
+    })
 
 @app.route("/", methods=["GET"])
 def home():
@@ -35,7 +48,21 @@ def webhook():
     chat_id = chat.get("id")
     user_text = message.get("text", "")
 
-    if not chat_id or not user_text:
+    if not chat_id:
+        return "ok"
+
+    if user_text == "/start":
+        send_telegram_message(
+            chat_id,
+            "Hello! I am Binkath Concierge, your AI travel assistant for Uzbekistan.\n\n"
+            "You can write in English or Russian.\n\n"
+            "Здравствуйте! Я Binkath Concierge, ваш AI-консьерж по Узбекистану.\n\n"
+            "Можете писать на русском или английском."
+        )
+        return "ok"
+
+    if not user_text:
+        send_telegram_message(chat_id, "Please send a text message.")
         return "ok"
 
     try:
@@ -51,7 +78,10 @@ def webhook():
         send_telegram_message(chat_id, reply)
 
     except Exception as e:
-        send_telegram_message(chat_id, "Извините, временная ошибка сервиса. Мы уже работаем над этим.")
-        print(e)
+        print("ERROR:", e)
+        send_telegram_message(
+            chat_id,
+            "Извините, временная ошибка сервиса. Попробуйте ещё раз через минуту."
+        )
 
     return "ok"
