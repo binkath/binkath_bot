@@ -10,6 +10,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+chat_history = {}
+
 SYSTEM_PROMPT = """
 You are Binkath Concierge, an AI concierge for travelers in Uzbekistan.
 
@@ -17,15 +19,19 @@ Language rules:
 - If the user writes in Russian, answer only in Russian.
 - If the user writes in English, answer only in English.
 - Never mix Russian and English in one answer.
-- If the user asks to switch language, switch to that language.
+
+Important behavior:
+- Remember the conversation context.
+- If the user asks "where?", "give location", "near this place", or similar, understand it based on the previous messages.
+- Do not invent exact hotel availability or prices.
+- If you are not sure, say that you need to check live map or hotel database.
+- Be practical: give addresses, districts, route advice and Google Maps search links when possible.
 
 Role:
-You help travelers with hotels, routes, transport, local advice, safety, restaurants, attractions and travel planning in Uzbekistan.
+You help travelers with hotels, districts, routes, transport, local advice, safety, restaurants, attractions and travel planning in Uzbekistan.
 
 Style:
-Be clear, professional, concise and helpful.
-Do not invent exact hotel availability or prices unless the user provided them.
-If needed, ask one short clarifying question.
+Clear, professional, concise, helpful.
 """
 
 def send_telegram_message(chat_id, text):
@@ -52,29 +58,47 @@ def webhook():
         return "ok"
 
     if user_text == "/start":
+        chat_history[chat_id] = []
         send_telegram_message(
             chat_id,
-            "Hello! I am Binkath Concierge, your AI travel assistant for Uzbekistan.\n\n"
-            "You can write in English or Russian.\n\n"
             "Здравствуйте! Я Binkath Concierge, ваш AI-консьерж по Узбекистану.\n\n"
-            "Можете писать на русском или английском."
+            "Можете писать на русском или английском.\n\n"
+            "Hello! I am Binkath Concierge, your AI travel assistant for Uzbekistan.\n\n"
+            "You can write in English or Russian."
         )
         return "ok"
 
     if not user_text:
-        send_telegram_message(chat_id, "Please send a text message.")
+        send_telegram_message(chat_id, "Пожалуйста, отправьте текстовое сообщение.")
         return "ok"
 
+    if chat_id not in chat_history:
+        chat_history[chat_id] = []
+
+    chat_history[chat_id].append({
+        "role": "user",
+        "content": user_text
+    })
+
+    chat_history[chat_id] = chat_history[chat_id][-10:]
+
     try:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_history[chat_id]
+
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_text}
-            ]
+            messages=messages
         )
 
         reply = response.choices[0].message.content
+
+        chat_history[chat_id].append({
+            "role": "assistant",
+            "content": reply
+        })
+
+        chat_history[chat_id] = chat_history[chat_id][-10:]
+
         send_telegram_message(chat_id, reply)
 
     except Exception as e:
