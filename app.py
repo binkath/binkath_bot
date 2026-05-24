@@ -1,8 +1,7 @@
 from flask import Flask, request
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from openai import OpenAI
 import os
+import requests
 
 app = Flask(__name__)
 
@@ -11,43 +10,48 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
+SYSTEM_PROMPT = """
+You are Binkath Concierge, an AI concierge for travelers in Uzbekistan.
+Answer clearly, professionally and helpfully.
+You help with hotels, routes, transport, local advice, safety and travel planning.
+If the user writes in Russian, answer in Russian.
+If the user writes in English, answer in English.
+"""
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text
-
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": "You are Binkath Concierge, an elite AI concierge for Uzbekistan tourism. You help tourists professionally and warmly."
-            },
-            {
-                "role": "user",
-                "content": user_message
-            }
-        ]
-    )
-
-    reply = response.choices[0].message.content
-
-    await update.message.reply_text(reply)
-
-telegram_app.add_handler(
-    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-)
+def send_telegram_message(chat_id, text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    requests.post(url, json={"chat_id": chat_id, "text": text})
 
 @app.route("/", methods=["GET"])
 def home():
     return "Binkath Concierge Bot is running"
 
-@app.route(f"/webhook/{TELEGRAM_TOKEN}", methods=["POST"])
-async def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, telegram_app.bot)
-    await telegram_app.process_update(update)
-    return "ok"
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.get_json()
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    message = data.get("message", {})
+    chat = message.get("chat", {})
+    chat_id = chat.get("id")
+    user_text = message.get("text", "")
+
+    if not chat_id or not user_text:
+        return "ok"
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_text}
+            ]
+        )
+
+        reply = response.choices[0].message.content
+        send_telegram_message(chat_id, reply)
+
+    except Exception as e:
+        send_telegram_message(chat_id, "Извините, временная ошибка сервиса. Мы уже работаем над этим.")
+        print(e)
+
+    return "ok"
