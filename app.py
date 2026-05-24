@@ -15,27 +15,17 @@ chat_history = {}
 SYSTEM_PROMPT = """
 You are Binkath Concierge, an AI concierge for travelers in Uzbekistan.
 
-Language rules:
-- If the user writes in Russian, answer only in Russian.
-- If the user writes in English, answer only in English.
-- Never mix Russian and English in one answer.
-
-Important behavior:
-- Remember the conversation context.
-- If the user asks "where?", "give location", "near this place", or similar, understand it based on the previous messages.
-- Do not invent exact hotel availability or prices.
-- If you are not sure, say that you need to check live map or hotel database.
-- Be practical: give addresses, districts, route advice and Google Maps search links when possible.
-
-Role:
-You help travelers with hotels, districts, routes, transport, local advice, safety, restaurants, attractions and travel planning in Uzbekistan.
-
-Style:
-Clear, professional, concise, helpful.
+Rules:
+- Reply in Russian if the user writes in Russian.
+- Reply in English if the user writes in English.
+- Remember previous messages in the conversation.
+- Help with hotels, restaurants, routes, districts, safety and tourism.
+- Be practical and concise.
 """
 
 def send_telegram_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+
     requests.post(url, json={
         "chat_id": chat_id,
         "text": text
@@ -47,31 +37,66 @@ def home():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
+
     data = request.get_json()
 
     message = data.get("message", {})
     chat = message.get("chat", {})
+
     chat_id = chat.get("id")
     user_text = message.get("text", "")
+
+    # GEOLOCATION SUPPORT
+    location = message.get("location")
+
+    if location:
+
+        lat = location.get("latitude")
+        lon = location.get("longitude")
+
+        maps_link = f"https://www.google.com/maps?q={lat},{lon}"
+
+        send_telegram_message(
+            chat_id,
+            f"📍 Геолокация получена.\n\n"
+            f"Ваше местоположение:\n{maps_link}\n\n"
+            f"Теперь напишите, что вам нужно рядом:\n"
+            f"- отель\n"
+            f"- ресторан\n"
+            f"- банкомат\n"
+            f"- аптека\n"
+            f"- достопримечательность"
+        )
+
+        return "ok"
 
     if not chat_id:
         return "ok"
 
+    # START COMMAND
     if user_text == "/start":
+
         chat_history[chat_id] = []
+
         send_telegram_message(
             chat_id,
-            "Здравствуйте! Я Binkath Concierge, ваш AI-консьерж по Узбекистану.\n\n"
-            "Можете писать на русском или английском.\n\n"
-            "Hello! I am Binkath Concierge, your AI travel assistant for Uzbekistan.\n\n"
-            "You can write in English or Russian."
+            "Здравствуйте! Я Binkath Concierge.\n\n"
+            "Ваш AI-консьерж по Узбекистану.\n\n"
+            "Можете отправить геолокацию или написать вопрос."
         )
+
         return "ok"
 
     if not user_text:
-        send_telegram_message(chat_id, "Пожалуйста, отправьте текстовое сообщение.")
+
+        send_telegram_message(
+            chat_id,
+            "Пожалуйста, отправьте текстовое сообщение."
+        )
+
         return "ok"
 
+    # MEMORY
     if chat_id not in chat_history:
         chat_history[chat_id] = []
 
@@ -83,7 +108,13 @@ def webhook():
     chat_history[chat_id] = chat_history[chat_id][-10:]
 
     try:
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_history[chat_id]
+
+        messages = [
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT
+            }
+        ] + chat_history[chat_id]
 
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -97,15 +128,15 @@ def webhook():
             "content": reply
         })
 
-        chat_history[chat_id] = chat_history[chat_id][-10:]
-
         send_telegram_message(chat_id, reply)
 
     except Exception as e:
+
         print("ERROR:", e)
+
         send_telegram_message(
             chat_id,
-            "Извините, временная ошибка сервиса. Попробуйте ещё раз через минуту."
+            "Ошибка сервиса. Попробуйте позже."
         )
 
     return "ok"
